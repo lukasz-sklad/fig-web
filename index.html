@@ -12,12 +12,23 @@
 import init, * as bindings from './figcraft-web-9f64de4494b6e5d5.js';
 const wasm = await init({ module_or_path: './figcraft-web-9f64de4494b6e5d5_bg.wasm' });
 
-
 window.wasmBindings = bindings;
+window.figcraft_command = bindings.figcraft_command;
+window.figcraft_open_file = bindings.figcraft_open_file;
 
+// Initial theme from URL or pending message
+const params = new URLSearchParams(window.location.search);
+const urlTheme = params.get("theme");
+const targetTheme = window.__pending_theme || (urlTheme === "light" ? "light" : (urlTheme === "dark" ? "dark" : null));
+if (targetTheme && typeof bindings.figcraft_command === "function") {
+  try {
+    bindings.figcraft_command(targetTheme === "light" ? "view.themeLight" : "view.themeDark", "{}");
+  } catch (err) {
+    console.warn("[FigCraft] Błąd ustawiania motywu początkowego:", err);
+  }
+}
 
 dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
-
 </script>
   <style>
     :root { color-scheme: dark; }
@@ -149,6 +160,47 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
   </div>
 
   <script>
+    function setAppTheme(targetTheme) {
+      const isLight = targetTheme === "light";
+      const cmd = isLight ? "view.themeLight" : "view.themeDark";
+      const fn = window.figcraft_command || (window.wasmBindings && window.wasmBindings.figcraft_command);
+      if (typeof fn === "function") {
+        try {
+          fn(cmd, "{}");
+        } catch (err) {
+          console.warn("[FigCraft] Błąd przełączania motywu:", err);
+        }
+      } else {
+        window.__pending_theme = targetTheme;
+      }
+    }
+
+    window.addEventListener("message", (event) => {
+      if (!event.data) return;
+      const theme = event.data.theme || (event.data.type === "set_theme" ? event.data.value : null);
+      if (theme === "light" || theme === "dark") {
+        setAppTheme(theme);
+      }
+    });
+
+    // Wczesne dopasowanie stylu ekranu ładowania jeśli motyw to light
+    if (new URLSearchParams(window.location.search).get("theme") === "light") {
+      try {
+        document.documentElement.style.colorScheme = "light";
+        const loading = document.getElementById("figcraft_loading");
+        if (loading) {
+          loading.style.background = "#f4f4f5";
+          loading.style.color = "#18181b";
+          const brand = loading.querySelector(".brand-header");
+          if (brand) brand.style.color = "#18181b";
+          const msg = document.getElementById("loading_msg");
+          if (msg) msg.style.color = "#27272a";
+          const sub = document.getElementById("loading_sub");
+          if (sub) sub.style.color = "#71717a";
+        }
+      } catch (_) {}
+    }
+
     const CORS_PROXIES = [
       (u) => `https://lmk.one/api/cors?url=${encodeURIComponent(u)}`,
       (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`
